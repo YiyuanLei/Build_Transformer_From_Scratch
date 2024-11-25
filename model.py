@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 import math
 
-from torch.utils.backcompat import keepdim_warning
-
-
 class InputEmbeddings(nn.Module):
     # mapping between a number to a vector of d_model dimensions
     def __init__(self, d_model: int, vocab_size: int):
@@ -60,6 +57,59 @@ class FeedForwardBlock(nn.Module):
     def forward(self, x):
         # (batch, seq_len, d_model) --> (batch, seq_len, d_ff) --> (batch, seq_len, d_model)
         return self.linear_2(self.dropout(torch.relu(self.linear_1(x))))
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model: int, h: int, dropout: float) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.h = h
+        self.dropout = nn.Dropout(float)
+        assert d_model % h == 0, "d_model is not divisble by h"
+
+        self.d_k = d_model //h
+
+        self.w_q = nn.Linear(d_model, d_model)
+        self.w_k = nn.Linear(d_model, d_model)
+        self.w_v = nn.Linear(d_model, d_model)
+        self.w_o = nn.Linear(d_model, d_model)
+
+    @staticmethod
+    def attention(query, key, value, mask, dropout:nn.Dropout):
+        # use static method so that we can use this function without the instance of the class
+        d_k = query.shape[-1]
+
+        # (Batch, h, seq_len, d_k) --> # (Batch, h, seq_len, seq_len)
+        attention_scores = (query @ key.transpose(-2, -1)) /math.sqrt(d_k)
+        # @: matrix multiplication
+        if mask is not None:
+            attention_scores.masked_fill(mask == 0, -1e-9)
+            # when mask value is 0, the value will be replaced by a very small value, -1e-9
+            attention_scores = attention_scores.softmax(dim = -1) #(Batch, h, seq_len, seq_len)
+        if dropout is not True:
+            attention_scores = dropout(attention_scores)
+
+        # target value, and value for visualizations
+        return (attention_scores @ value), attention_scores
+
+
+    def forward(self, q, k, v, mask):
+        query = self.w_q(q) # (batch, seq_len, d) -> (batch, seq_len, d)
+        key = self.w_v(k)
+        value = self.w_v(v)
+        # (batch, seq_len, d) -> (batch, seq_len, h, d_k) -> (batch, h, seq_len, d_k)
+        query = query.view(query.shape[0], query.shape[1], self.h, self.d_k).transpose(1, 2)
+        key = key.view(key.shape[0], key.shape[1], self.h, self.d_k).transpose(1, 2)
+        value = value.view(value.shape[0], value.shape[1], self.h, self.d_k).transpose(1, 2)
+
+        x, self.attention_scores  = MultiHeadAttention.attention(query, key, value, self.dropout)
+
+        # (Batch, h, seq_len, d_k) -> (Batch, seq_len, h, d_k) -> (Batch, seq_len, d_k)
+        x = x.transpose(1, 2).contiguous().view(x.shape[0], -1, self.h * self.d_k)
+
+        # (Batch, seq_len, d_k) -> (Batch, seq_len, d_k)
+        return self.w_o(x)
+
+
 
 
 
