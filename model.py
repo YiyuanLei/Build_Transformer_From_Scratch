@@ -58,7 +58,7 @@ class FeedForwardBlock(nn.Module):
         # (batch, seq_len, d_model) --> (batch, seq_len, d_ff) --> (batch, seq_len, d_model)
         return self.linear_2(self.dropout(torch.relu(self.linear_1(x))))
 
-class MultiHeadAttention(nn.Module):
+class MultiHeadAttentionBlock(nn.Module):
     def __init__(self, d_model: int, h: int, dropout: float) -> None:
         super().__init__()
         self.d_model = d_model
@@ -108,6 +108,77 @@ class MultiHeadAttention(nn.Module):
 
         # (Batch, seq_len, d_k) -> (Batch, seq_len, d_k)
         return self.w_o(x)
+
+class  ResidualConnection(nn.Module):
+
+    def __init__(self, dropout: float):
+        super().__init__() # Always call parent constructor
+        self.dropout = nn.Dropout(dropout)
+        self.norm = LayerNormalization()
+    def forward(self, x, sublayer):
+        # sublayer is the previous layer
+        # the paper did sublayer first then apply normalization
+        return x + self.dropout(sublayer(self.norm(x)))
+
+class EncoderBlock(nn.Moduel):
+    def __init__(self, dropout: float, self_attention_block: MultiHeadAttentionBlock, feed_forward_block: FeedForwardBlock):
+        super().__init__() # Always call parent constructor
+        self.self_attention_block = self_attention_block
+        self.feed_forward_block = feed_forward_block
+        self.residual_connections = nn.ModuleList([ResidualConnection(dropout) for _ in range(2)])
+
+    def forward(self, x, src_mask):
+        # why src_mask: mask applied to input of encoder so that embedding words won't interact with other words
+        # ##multi-head attention part?
+        # the first part is the multi_head attention (sublayer) within add_ norm (residual connections)
+        x = self.residual_connections[0](x,  lambda x: self.self_attention_block(x, x, x, src_mask))
+        # call the multi_head attention query, key, value, scr_mask
+        # second part is the feedforward part
+        x = self.residual_connections[1](x, self.feed_forward_block)
+
+        return x
+class Encoder(nn.Module):
+    def __init__(self, layers: nn.ModuleList) -> None:
+        super().__init__()
+        self.layers = layers
+        self.norm = LayerNormalization()
+    def forward(self, x, mask):
+        for layer in self.layers:
+            x = layer(x, mask)
+        return self.norm(x)
+
+class DecoderBlock(nn.Module):
+    def __init__(self, dropout: float, self_attention_block: MultiHeadAttentionBlock,cross_attention_block: MultiHeadAttentionBlock, feed_forward_block: FeedForwardBlock):
+        super().__init__()
+        self.self_attention_block = self_attention_block
+        self.cross_attention_block = cross_attention_block
+        self.feed_forward_block = feed_forward_block
+        self.residual_connections = nn.ModuleList([ResidualConnection(dropout) for _ in range(3)])
+
+    def forward(self, x, encoder_output, src_mask, tgt_mask):
+        # source_mask: encoder mask
+        # tgt_mask: decoder mask
+
+        x = self.residual_connections[0](x, lambda x: self.self_attention_block(x, x, x, tgt_mask))
+        # call the multi_head attention query, key, value, scr_mask
+        # second part is the feedforward part
+        x = self.residual_connections[1](x, lambda x: self.cross_attention_block(x, encoder_output, encoder_output, src_mask))
+        x = self.residual_connections[2](x, self.feed_forward_block)
+        return x
+
+class Decoder(nn.Module):
+    def __init__(self, layers: nn.ModuleList) -> None:
+        super().__init__()
+        self.layers = layers
+        self.norm = LayerNormalization()
+    def forward(self, x, encoder_output, src_mask, tgt_mask):
+        for layer in self.layers:
+            x = layer(x, encoder_output, src_mask, tgt_mask)
+        return self.norm(x)
+
+
+
+
 
 
 
