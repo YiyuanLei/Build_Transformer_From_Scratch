@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import math
 
+
+
 class InputEmbeddings(nn.Module):
     # mapping between a number to a vector of d_model dimensions
     def __init__(self, d_model: int, vocab_size: int):
@@ -25,13 +27,13 @@ class PositionalEncoding(nn.Module):
         position = torch.arange(0, seq_len, dtype = torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
         # apply sin and cos for position terms
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.sin(position * div_term)
+        pe[:, 0::2] = torch.sin(position * div_term) # even has sin, ::2, start 0, up to N, go forward by 2, e.g. 0, 2, 4
+        pe[:, 1::2] = torch.sin(position * div_term)  # odd has sin, 1::2, start 1, up to N, skip by 2, e.g. 1, 3, 5
 
         # add a dimension for batch sizes, dimension (1, seq_len, d_model), 1 is batch size
         pe = pe.unsqueeze(0)
-
         self.register_buffer('pe', pe)
+
     def forward(self, x):
         x += (self.pe[:, :x.shape[1], :).requires_grad_(False) # makes pe not learned to save computation costs, x.shape[1] is the sequential length
         # slicing operation[dim1, dim2, dim3], [:,:x,:] means take all elements in dim1, take x length in dime2, and all in deim3
@@ -235,7 +237,7 @@ class build_transformer(src_vocab_size: int, tgt_vocab_size: int, src_seq_len: i
         decoder_blocks.append(decoder_block)
     # Create encoder and decoder
     encoder = Encoder(nn.ModuleList(encoder_blocks))
-    decoder = Decodre(nn.ModuleList(decoder_blocks))
+    decoder = Decoder(nn.ModuleList(decoder_blocks))
 
     # Create the projection Lyaer
 
