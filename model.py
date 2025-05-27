@@ -87,15 +87,16 @@ class MultiHeadAttentionBlock(nn.Module):
         if mask is not None:
             attention_scores.masked_fill_(mask == 0, -1e-9)
             # when mask value is 0, the value will be replaced by a very small value, -1e-9
-            attention_scores = attention_scores.softmax(dim=-1)  # (Batch, h, seq_len, seq_len)
-        if dropout is not True:
+        attention_scores = attention_scores.softmax(dim=-1)  # (Batch, h, seq_len, seq_len)
+        if dropout is not None:
             attention_scores = dropout(attention_scores)
 
-        # target value, and value for visualizations
+        # target value, and attention_scores used for visualizations
         return (attention_scores @ value), attention_scores
 
     def forward(self, q, k, v, mask):
         query = self.w_q(q) # (batch, seq_len, d) -> (batch, seq_len, d)
+        # multiply w_q with q
         key = self.w_v(k)
         value = self.w_v(v)
 
@@ -107,28 +108,27 @@ class MultiHeadAttentionBlock(nn.Module):
         # no need a self, because it's static method
         x, self.attention_scores  = MultiHeadAttentionBlock.attention(query, key, value, self.dropout)
 
-        # (Batch, h, seq_len, d_k) -> (Batch, seq_len, h, d_k) -> (Batch, seq_len, d_k)
-        x = x.transpose(1, 2).contiguous().view(x.shape[0], -1, self.h * self.d_k)
+        # (Batch, h, seq_len, d_k) -> (Batch, seq_len, h, d_k) -> (Batch, seq_len, d_model)
+        # contiguous: pytorch to transform the shape and concat inplace
+        x = x.transpose(1, 2).contiguous().view(x.shape[0], -1, self.h * self.d_k) # d_k*h is d_model,
 
-        # (Batch, seq_len, d_k) -> (Batch, seq_len, d_k)
+        # (Batch, seq_len, d_model) -> (Batch, seq_len, d_model)
+        # multiply w_o with x
         return self.w_o(x)
-
-
-
 
 class  ResidualConnection(nn.Module):
 
-    def __init__(self, dropout: float):
+    def __init__(self, dropout: float) -> None:
         super().__init__() # Always call parent constructor
         self.dropout = nn.Dropout(dropout)
         self.norm = LayerNormalization()
     def forward(self, x, sublayer):
-        # sublayer is the previous layer
+        # sublayer is the output of the next layer
         # the paper did sublayer first then apply normalization
         return x + self.dropout(sublayer(self.norm(x)))
 
 class EncoderBlock(nn.Moduel):
-    def __init__(self, dropout: float, self_attention_block: MultiHeadAttentionBlock, feed_forward_block: FeedForwardBlock):
+    def __init__(self, dropout: float, self_attention_block: MultiHeadAttentionBlock, feed_forward_block: FeedForwardBlock) -> None:
         super().__init__() # Always call parent constructor
         self.self_attention_block = self_attention_block
         self.feed_forward_block = feed_forward_block
@@ -142,8 +142,8 @@ class EncoderBlock(nn.Moduel):
         # call the multi_head attention query, key, value, scr_mask
         # second part is the feedforward part
         x = self.residual_connections[1](x, self.feed_forward_block)
-
         return x
+
 class Encoder(nn.Module):
     def __init__(self, layers: nn.ModuleList) -> None:
         super().__init__()
