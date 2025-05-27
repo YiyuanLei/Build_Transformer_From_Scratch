@@ -17,3 +17,24 @@
 - Why do we use sinusoidal function?
   1) Extrapolation for positional relationships that not encountered before
   2) stable derivatives
+### Layer Normalization [link](https://medium.com/@sachinsoni600517/layer-normalization-in-transformer-1a2efbff8b85)
+- Why do we need layer normalization
+  1) Stability: prevent large input scales affect the weights
+  2) Consistency: prevent internal covariate shift (activation weights changes due to network weights)
+- Why don't se use batch normalization
+  1) batch normalization is not suitable for sequential data
+- How does batch normalization differ from layer normalization?
+  1) Batch normalization normalizes across data (batches)
+  2) Layer normalization normalizes across features 
+### Feed forward block
+  1) Feedforward block is essentially a fully linear connected layer of a Relu function with drop outs applidd
+  2) Where the relu's input is another fully connected linear layer 
+### Multi-head attention model
+- Intuition: to learn each aspect of the input dimension 
+- Each word will be decomposed into QKV, so that we can see it in full sentences, but partial aspects
+- Attention score: softmax[Q @ K^T/sqrt(_k)], with size batch,h, seq, seq
+- Why mask?
+  - if we want certain words not intervene with other words such as future words, patting words
+- How is mask applied?
+  - Mask is added on attention scores
+    
