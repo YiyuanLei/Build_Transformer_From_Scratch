@@ -35,19 +35,19 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        x += (self.pe[:, :x.shape[1], :).requires_grad_(False) # makes pe not learned to save computation costs, x.shape[1] is the sequential length
+        x += (self.pe[:, :x.shape[1], :]).requires_grad_(False) # makes pe not learned to save computation costs, x.shape[1] is the sequential length
         # slicing operation[dim1, dim2, dim3], [:,:x,:] means take all elements in dim1, take x length in dime2, and all in deim3
         return self.drop_out(x)
 class LayerNormalization(nn.Module):
     def __init__(self, eps: float = 10**-6) -> None:
         super().__init__()
-        self.eps = eps # numerical stability to avoid zero standard deviation
+        self.eps = eps # numerical stability and avoid divided by zero standard deviation
         self.alpha = nn.Parameter(torch.ones(1)) # learnable multiplicative parameters
-        self.bias = nn.Parameter(torch.zeors(1)) # learnable additive parameters
+        self.bias = nn.Parameter(torch.zeros(1)) # learnable additive parameters
     def forward(self, x):
         mean = x.mean(dim = -1, keepdim =  True) # keep dimensions easier for broadcasting
         std = x.std(dim = -1, keepdim = True) # dim = -1 , is x.ndim - 1 (last dimension)
-        return self.alpha + (x - mean)/(std + self.eps) + self.bias
+        return self.alpha * (x - mean)/(std + self.eps) + self.bias
 
 class FeedForwardBlock(nn.Module):
     def __init__(self, d_model: int, d_ff:int, dropout: float):
@@ -65,7 +65,7 @@ class MultiHeadAttentionBlock(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.h = h
-        self.dropout = nn.Dropout(float)
+        self.dropout = nn.Dropout(dropout)
         assert d_model % h == 0, "d_model is not divisble by h"
 
         self.d_k = d_model //h
@@ -73,43 +73,48 @@ class MultiHeadAttentionBlock(nn.Module):
         self.w_q = nn.Linear(d_model, d_model)
         self.w_k = nn.Linear(d_model, d_model)
         self.w_v = nn.Linear(d_model, d_model)
-        self.w_o = nn.Linear(d_model, d_model)
+        self.w_o = nn.Linear(d_model, d_model) # output matrix
+        # d_v and d_k at practically level is the same
+        # we call d_v because of the softmax function transformation
 
-    @staticmethod
-    def attention(query, key, value, mask, dropout:nn.Dropout):
+    @staticmethod #static methods means you can call this class without a instance, can directly use the methods
+    def attention(query, key, value, mask, dropout: nn.Dropout):
         # use static method so that we can use this function without the instance of the class
         d_k = query.shape[-1]
-
         # (Batch, h, seq_len, d_k) --> # (Batch, h, seq_len, seq_len)
-        attention_scores = (query @ key.transpose(-2, -1)) /math.sqrt(d_k)
+        attention_scores = (query @ key.transpose(-2, -1)) / math.sqrt(d_k)
         # @: matrix multiplication
         if mask is not None:
-            attention_scores.masked_fill(mask == 0, -1e-9)
+            attention_scores.masked_fill_(mask == 0, -1e-9)
             # when mask value is 0, the value will be replaced by a very small value, -1e-9
-            attention_scores = attention_scores.softmax(dim = -1) #(Batch, h, seq_len, seq_len)
+            attention_scores = attention_scores.softmax(dim=-1)  # (Batch, h, seq_len, seq_len)
         if dropout is not True:
             attention_scores = dropout(attention_scores)
 
         # target value, and value for visualizations
         return (attention_scores @ value), attention_scores
 
-
     def forward(self, q, k, v, mask):
         query = self.w_q(q) # (batch, seq_len, d) -> (batch, seq_len, d)
         key = self.w_v(k)
         value = self.w_v(v)
-        # (batch, seq_len, d) -> (batch, seq_len, h, d_k) -> (batch, h, seq_len, d_k)
+
+        # (batch, seq_len, d) -> (batch, seq_len, h, d_k) -> Through Transpose 1,2 -> (batch, h, seq_len, d_k)
         query = query.view(query.shape[0], query.shape[1], self.h, self.d_k).transpose(1, 2)
         key = key.view(key.shape[0], key.shape[1], self.h, self.d_k).transpose(1, 2)
         value = value.view(value.shape[0], value.shape[1], self.h, self.d_k).transpose(1, 2)
 
-        x, self.attention_scores  = MultiHeadAttention.attention(query, key, value, self.dropout)
+        # no need a self, because it's static method
+        x, self.attention_scores  = MultiHeadAttentionBlock.attention(query, key, value, self.dropout)
 
         # (Batch, h, seq_len, d_k) -> (Batch, seq_len, h, d_k) -> (Batch, seq_len, d_k)
         x = x.transpose(1, 2).contiguous().view(x.shape[0], -1, self.h * self.d_k)
 
         # (Batch, seq_len, d_k) -> (Batch, seq_len, d_k)
         return self.w_o(x)
+
+
+
 
 class  ResidualConnection(nn.Module):
 
