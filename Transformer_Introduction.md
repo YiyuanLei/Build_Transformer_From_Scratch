@@ -37,4 +37,9 @@
   - if we want certain words not intervene with other words such as future words, patting words
 - How is mask applied?
   - Mask is added on attention scores
+### Residual connection
+- Function: to skip a a layer and combine the two
+
+### Encoder block
+- Why do we need src_masks on input of the encoder? Because we don't wanna interactions between padding and other words
     
